@@ -37,6 +37,7 @@ export function ExpenseForm() {
   const [receiptUrl, setReceiptUrl] = useState<string>("")
   const [loading, setLoading] = useState(false)
   const [scanning, setScanning] = useState(false)
+  const [autoScan, setAutoScan] = useState(true)
 
   function update<K extends keyof typeof form>(k: K, v: string) {
     setForm((f) => ({ ...f, [k]: v }))
@@ -65,8 +66,16 @@ export function ExpenseForm() {
 
       toast({
         title: "Receipt uploaded",
-        description: "Click 'Scan Receipt' to extract data",
+        description: autoScan ? "Auto-scanning receipt..." : "Click 'Scan Receipt' to extract data",
       })
+
+      // Auto-scan if enabled
+      if (autoScan) {
+        // Small delay to ensure upload is complete
+        setTimeout(() => {
+          handleScanReceipt(data.url)
+        }, 500)
+      }
     } catch (error: any) {
       toast({
         title: "Upload failed",
@@ -78,8 +87,10 @@ export function ExpenseForm() {
     }
   }
 
-  async function handleScanReceipt() {
-    if (!receiptUrl) {
+  async function handleScanReceipt(urlOverride?: string) {
+    const urlToScan = urlOverride || receiptUrl
+    
+    if (!urlToScan) {
       toast({
         title: "No receipt",
         description: "Please upload a receipt first",
@@ -95,7 +106,7 @@ export function ExpenseForm() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ imageUrl: receiptUrl }),
+        body: JSON.stringify({ imageUrl: urlToScan }),
       })
 
       if (!response.ok) {
@@ -115,8 +126,8 @@ export function ExpenseForm() {
       })
 
       toast({
-        title: "Receipt scanned!",
-        description: "Please review and confirm the extracted data",
+        title: "Receipt scanned! 🎉",
+        description: "Form auto-filled. Please review and confirm the data.",
       })
     } catch (error: any) {
       toast({
@@ -203,7 +214,18 @@ export function ExpenseForm() {
 
       <div className="grid gap-4">
         <div className="grid gap-2">
-          <Label>Attach Receipt</Label>
+          <div className="flex items-center justify-between">
+            <Label>Attach Receipt</Label>
+            <label className="flex items-center gap-2 text-xs font-mono cursor-pointer">
+              <input
+                type="checkbox"
+                checked={autoScan}
+                onChange={(e) => setAutoScan(e.target.checked)}
+                className="rounded border-border"
+              />
+              Auto-scan on upload
+            </label>
+          </div>
           <div className="flex gap-2">
             <Input
               type="file"
@@ -212,12 +234,12 @@ export function ExpenseForm() {
                 const file = e.target.files?.[0]
                 if (file) handleReceiptUpload(file)
               }}
-              disabled={loading}
+              disabled={loading || scanning}
             />
-            {receiptUrl && (
+            {receiptUrl && !autoScan && (
               <Button
                 type="button"
-                onClick={handleScanReceipt}
+                onClick={() => handleScanReceipt()}
                 disabled={scanning}
                 className="bg-secondary text-secondary-foreground hover:bg-secondary/80"
               >
@@ -228,6 +250,11 @@ export function ExpenseForm() {
           {receiptFile && (
             <p className="text-xs font-mono text-foreground/60">
               Attached: {receiptFile.name}
+            </p>
+          )}
+          {scanning && (
+            <p className="text-xs font-mono text-foreground/60 animate-pulse">
+              🤖 AI is analyzing your receipt...
             </p>
           )}
         </div>

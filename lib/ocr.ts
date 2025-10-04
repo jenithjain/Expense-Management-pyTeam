@@ -1,21 +1,45 @@
 import Tesseract from 'tesseract.js';
 import path from 'path';
+import { extractReceiptDataWithGemini } from './gemini-ocr';
 
 /**
  * Extract receipt data from image using OCR
+ * Uses Gemini AI if API key is available, falls back to Tesseract
  */
 export async function extractReceiptData(imageUrl: string): Promise<any> {
   try {
+    // Try Gemini AI first if API key is available
+    if (process.env.GEMINI_API_KEY) {
+      console.log('Using Gemini AI for receipt extraction...');
+      try {
+        return await extractReceiptDataWithGemini(imageUrl);
+      } catch (geminiError: any) {
+        console.error('Gemini extraction failed, falling back to Tesseract:', geminiError.message);
+      }
+    }
+
+    // Fallback to Tesseract OCR
+    console.log('Using Tesseract OCR for receipt extraction...');
+    
     // Convert relative URL to absolute path if needed
     let imagePath = imageUrl;
     if (imageUrl.startsWith('/receipts/')) {
       imagePath = path.join(process.cwd(), 'public', imageUrl);
     }
 
-    // Perform OCR
-    const result = await Tesseract.recognize(imagePath, 'eng', {
+    // Create Tesseract worker with proper configuration for Next.js
+    const worker = await Tesseract.createWorker('eng', 1, {
+      workerPath: typeof window === 'undefined' 
+        ? path.join(process.cwd(), 'node_modules', 'tesseract.js', 'src', 'worker-script', 'node', 'index.js')
+        : undefined,
       logger: (m) => console.log(m),
     });
+
+    // Perform OCR
+    const result = await worker.recognize(imagePath);
+    
+    // Terminate worker to free resources
+    await worker.terminate();
 
     const text = result.data.text;
 
