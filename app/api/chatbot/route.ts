@@ -108,7 +108,24 @@ export async function POST(request: NextRequest) {
       });
     }
     // Handle normal chat response
-    const response = await generateChatbotResponse(messages, context);
+    const response = await generateChatbotResponse(messages, context, undefined, undefined, session);
+    
+    // Check if the response contains chart data
+    try {
+      const parsedResponse = JSON.parse(response);
+      if (parsedResponse.hasCharts && parsedResponse.chartData) {
+        return NextResponse.json({ 
+          response: parsedResponse.response,
+          hasCharts: true,
+          chartData: parsedResponse.chartData,
+          userRole: parsedResponse.userRole,
+          timestamp: new Date().toISOString() 
+        });
+      }
+    } catch (e) {
+      // If it's not JSON, it's a regular text response
+    }
+    
     return NextResponse.json({ response, timestamp: new Date().toISOString() });
   } catch (error: any) {
     console.error('Chatbot API error:', error);

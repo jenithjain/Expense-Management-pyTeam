@@ -36,12 +36,12 @@ export default function AdminPage() {
               </div>
               <Chatbot 
                 variant="embedded"
-                placeholder="Ask about system config, users, or policies..."
+                placeholder="Ask about system config, users, policies, or statistics..."
                 suggestedQuestions={[
+                  "Show me the company statistics",
+                  "What's the total expense breakdown?",
                   "Who is the manager for a specific user?",
                   "What's the approval rule for Marketing?",
-                  "Show approval sequence for expenses over ₹50,000",
-                  "Is CFO auto-approval active?",
                   "How many users are in the system?"
                 ]}
               />

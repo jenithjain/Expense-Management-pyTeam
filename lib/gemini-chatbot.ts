@@ -1,8 +1,9 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenerativeAI, FunctionDeclarationsTool, Part, Content, SchemaType } from '@google/generative-ai';
 
 export interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
+  isChart?: boolean;
 }
 
 export interface ChatbotContext {
@@ -36,7 +37,9 @@ export interface ChatbotContext {
 export async function generateChatbotResponse(
   messages: ChatMessage[],
   context: ChatbotContext,
-  onChunk?: (text: string) => void
+  onChunk?: (text: string) => void,
+  onChart?: (chartData: any) => void,
+  userSession?: any
 ): Promise<string> {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
@@ -45,31 +48,96 @@ export async function generateChatbotResponse(
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash-exp'
+
+    const tools: FunctionDeclarationsTool[] = [
+      {
+        functionDeclarations: [
+          {
+            name: 'get_expense_statistics',
+            description: 'Fetches expense statistics and displays beautiful charts. Call this function when users ask for statistics, charts, analytics, data visualization, spending breakdown, financial overview, company statistics, team statistics, or phrases like "show me the numbers", "display charts", "expense breakdown", "analytics dashboard".',
+            parameters: {
+              type: SchemaType.OBJECT,
+              properties: {},
+            },
+          },
+        ],
+      },
+    ];
+
+    const model = genAI.getGenerativeModel({
+      model: 'gemini-2.0-flash-exp',
+      tools: tools,
     });
 
     // Build system context based on user role
     const systemPrompt = buildSystemPrompt(context);
 
-    // Convert messages to Gemini format
-    const contents = [
-      {
-        role: 'user',
-        parts: [{ text: systemPrompt }]
-      },
-      ...messages.map(msg => ({
-        role: msg.role === 'user' ? 'user' : 'model',
-        parts: [{ text: msg.content }]
-      }))
+    const history: Content[] = messages.map(msg => ({
+      role: msg.role === 'user' ? 'user' : 'model',
+      parts: [{ text: msg.content }]
+    }));
+
+    const lastMessage = history.pop();
+
+    const contents: Content[] = [
+      ...history,
+      ...(lastMessage ? [lastMessage] : [])
     ];
 
-    // Use streaming for real-time response
+    // Add system prompt to the beginning of the contents
+    contents.unshift({
+        role: 'user',
+        parts: [{ text: systemPrompt }]
+    });
+
+    const result = await model.generateContent({ contents });
+    const response = result.response;
+    const call = response.candidates?.[0]?.content?.parts?.[0]?.functionCall;
+
+    if (call) {
+      if (call.name === 'get_expense_statistics') {
+        // Call statistics function directly instead of making HTTP request
+        const stats = await getStatisticsData(userSession);
+        if (!stats) {
+          return "Sorry, I couldn't fetch the statistics right now.";
+        }
+
+        // Return the statistics data along with the response
+        const toolResponse: Content = {
+          role: 'user',
+          parts: [{
+            functionResponse: {
+              name: 'get_expense_statistics',
+              response: {
+                name: 'get_expense_statistics',
+                content: JSON.stringify(stats),
+              },
+            },
+          }],
+        };
+
+        const result2 = await model.generateContent({
+          contents: [...contents, { role: 'model', parts: [ { functionCall: call } ] }, toolResponse],
+        });
+        
+        const responseText = result2.response.candidates?.[0]?.content?.parts?.[0]?.text || "Here are the statistics.";
+        
+        // Return both the text response and the stats data
+        return JSON.stringify({
+          response: responseText,
+          hasCharts: true,
+          chartData: stats,
+          userRole: userSession?.user?.role?.toUpperCase()
+        });
+      }
+    }
+
+    // Fallback to streaming for regular chat
     if (onChunk) {
-      const result = await model.generateContentStream({ contents });
+      const streamResult = await model.generateContentStream({ contents });
       let fullText = '';
       
-      for await (const chunk of result.stream) {
+      for await (const chunk of streamResult.stream) {
         const chunkText = chunk.text();
         fullText += chunkText;
         onChunk(chunkText);
@@ -77,9 +145,7 @@ export async function generateChatbotResponse(
       
       return fullText;
     } else {
-      const result = await model.generateContent({ contents });
-      const response = await result.response;
-      return response.text();
+      return response.candidates?.[0]?.content?.parts?.[0]?.text || "";
     }
   } catch (error: any) {
     console.error('Chatbot error:', error);
@@ -146,20 +212,25 @@ As a MANAGER assistant, you help with:
 2. **Team Analytics**: Provide spending summaries, top spenders, category breakdowns, and budget tracking.
 3. **Quick Actions**: Enable approval/rejection directly from chat, bulk operations, and policy enforcement.
 4. **Team Management**: Answer questions about team members' spending patterns and compliance.
+5. **Statistics & Charts**: When users ask for team statistics, analytics, charts, data visualization, spending breakdown, financial overview, or say "show me the numbers", "display charts", "team analytics", "expense breakdown" - ALWAYS call the get_expense_statistics function to provide beautiful visual charts.
 
 Example queries you should handle:
+- "Show me team statistics" (CALL get_expense_statistics)
+- "Display team analytics" (CALL get_expense_statistics)
+- "What's my team's spending breakdown?" (CALL get_expense_statistics)
+- "Show me the numbers" (CALL get_expense_statistics)
 - "How many expenses are waiting for my approval?"
 - "Show pending expenses over ₹10,000"
 - "Who approves after me for Rohan's travel expense?"
-- "What's my team's total travel spend this quarter?"
-- "Show top 5 spenders on my team"
-- "Which category does my team spend most on?"
+
+IMPORTANT: Whenever a user asks for statistics, analytics, charts, or data visualization, you MUST call the get_expense_statistics function to provide visual charts and data.
 
 When answering:
 - Be concise and data-focused
 - Prioritize actionable insights
 - Offer quick approval/rejection options
 - Highlight policy violations or unusual patterns
+- For statistics requests, ALWAYS use the get_expense_statistics function
 - Provide summary statistics when relevant
 `,
     admin: `
@@ -168,25 +239,159 @@ As an ADMIN assistant, you help with:
 2. **User Management**: Provide information about user roles, manager assignments, and access permissions.
 3. **Policy Management**: Explain active policies, approval thresholds, and rule sequences.
 4. **System Analytics**: Provide company-wide spending insights and compliance metrics.
+5. **Statistics & Charts**: When users ask for statistics, analytics, charts, data visualization, spending breakdown, financial overview, company statistics, or say "show me the numbers", "display charts", "expense breakdown", "analytics dashboard" - ALWAYS call the get_expense_statistics function to provide beautiful visual charts.
 
 Example queries you should handle:
+- "Show me the company statistics" (CALL get_expense_statistics)
+- "What's the total expense breakdown?" (CALL get_expense_statistics)
+- "Display analytics dashboard" (CALL get_expense_statistics)
+- "Show me the numbers" (CALL get_expense_statistics)
 - "Who is Sameer Gupta's manager?"
 - "What's the approval rule for Marketing department?"
-- "Show approver sequence for expenses over ₹50,000"
-- "Is CFO auto-approval active?"
 - "How many users are in the system?"
-- "What are the current policy limits?"
+
+IMPORTANT: Whenever a user asks for statistics, analytics, charts, or data visualization, you MUST call the get_expense_statistics function to provide visual charts and data.
 
 When answering:
 - Be precise and technical when needed
 - Reference specific configuration settings
 - Explain the impact of changes
 - Provide system-level insights
+- For statistics requests, ALWAYS use the get_expense_statistics function
 - Suggest best practices for configuration
 `
   };
 
   return basePrompt + roleSpecificPrompts[context.userRole];
+}
+
+/**
+ * Get statistics data directly without HTTP call
+ */
+async function getStatisticsData(userSession: any) {
+  if (!userSession?.user) {
+    return null;
+  }
+
+  const userId = userSession.user.id;
+  
+  try {
+    // Import models here to avoid circular dependencies
+    const { default: dbConnect } = await import('@/lib/mongodb');
+    const { default: User } = await import('@/models/User');
+    const { default: Expense } = await import('@/models/Expense');
+
+    await dbConnect();
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return null;
+    }
+
+    let stats;
+    if (user.role === "ADMIN") {
+      stats = await getAdminStatsInternal(user.companyId.toString());
+    } else if (user.role === "MANAGER") {
+      stats = await getManagerStatsInternal(userId, user.companyId.toString());
+    } else {
+      return null;
+    }
+
+    return stats;
+  } catch (error) {
+    console.error("Error fetching stats:", error);
+    return null;
+  }
+}
+
+async function getAdminStatsInternal(companyId: string) {
+  const { default: Expense } = await import('@/models/Expense');
+  const { default: User } = await import('@/models/User');
+
+  const totalExpenses = await Expense.aggregate([
+    { $match: { companyId: companyId } },
+    { $group: { _id: null, total: { $sum: "$amount" } } },
+  ]);
+
+  const expensesByCategory = await Expense.aggregate([
+    { $match: { companyId: companyId } },
+    { $group: { _id: "$category", total: { $sum: "$amount" } } },
+    { $sort: { total: -1 } },
+  ]);
+
+  const expensesByStatus = await Expense.aggregate([
+    { $match: { companyId: companyId } },
+    { $group: { _id: "$status", count: { $sum: 1 } } },
+  ]);
+
+  const totalUsers = await User.countDocuments({ companyId: companyId });
+
+  return {
+    totalExpenses: totalExpenses[0]?.total || 0,
+    expensesByCategory: expensesByCategory.map((item: { _id: string; total: number }) => ({
+      name: item._id,
+      value: item.total,
+    })),
+    expensesByStatus: expensesByStatus.map((item: { _id: string; count: number }) => ({
+      name: item._id,
+      value: item.count,
+    })),
+    totalUsers,
+  };
+}
+
+async function getManagerStatsInternal(managerId: string, companyId: string) {
+  const { default: Expense } = await import('@/models/Expense');
+  const { default: User } = await import('@/models/User');
+
+  const teamMembers = await User.find({ managerId: managerId });
+  const teamMemberIds = teamMembers.map((user: any) => user._id);
+  teamMemberIds.push(managerId); // Include manager's own expenses
+
+  const totalTeamExpenses = await Expense.aggregate([
+    { $match: { employeeId: { $in: teamMemberIds }, companyId: companyId } },
+    { $group: { _id: null, total: { $sum: "$amount" } } },
+  ]);
+
+  const teamExpensesByCategory = await Expense.aggregate([
+    { $match: { employeeId: { $in: teamMemberIds }, companyId: companyId } },
+    { $group: { _id: "$category", total: { $sum: "$amount" } } },
+    { $sort: { total: -1 } },
+  ]);
+
+  const teamExpensesByStatus = await Expense.aggregate([
+    { $match: { employeeId: { $in: teamMemberIds }, companyId: companyId } },
+    { $group: { _id: "$status", count: { $sum: 1 } } },
+  ]);
+
+  const teamExpensesByUser = await Expense.aggregate([
+    { $match: { employeeId: { $in: teamMemberIds }, companyId: companyId } },
+    { $group: { _id: "$employeeId", total: { $sum: "$amount" } } },
+    { $sort: { total: -1 } },
+  ]);
+
+  const users = await User.find({ _id: { $in: teamExpensesByUser.map((item: { _id: string }) => item._id) } }).select('name email');
+  const userMap = users.reduce((acc: { [key: string]: string }, user: any) => {
+    acc[user._id.toString()] = user.name || user.email;
+    return acc;
+  }, {});
+
+  return {
+    totalTeamExpenses: totalTeamExpenses[0]?.total || 0,
+    teamExpensesByCategory: teamExpensesByCategory.map((item: { _id: string; total: number }) => ({
+      name: item._id,
+      value: item.total,
+    })),
+    teamExpensesByStatus: teamExpensesByStatus.map((item: { _id: string; count: number }) => ({
+      name: item._id,
+      value: item.count,
+    })),
+    teamExpensesByUser: teamExpensesByUser.map((item: { _id: any; total: number }) => ({
+      name: userMap[item._id.toString()],
+      value: item.total,
+    })),
+    teamSize: teamMembers.length,
+  };
 }
 
 /**

@@ -6,8 +6,39 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { GlassCard } from "@/components/shared/glass-card"
 import { StatisticsCharts } from "@/components/shared/statistics-charts"
-import { MessageCircle, Send, X, Loader2, Sparkles, BarChart3 } from "lucide-react"
+import {
+  Bot,
+  MessageCircle,
+  BarChart as BarChartIcon,
+  LineChart,
+  PieChart,
+  Sparkles,
+  X,
+  Loader2,
+  Send,
+} from 'lucide-react';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+} from '@/components/ui/chart';
+import {
+  BarChart,
+  Bar,
+  Line,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  PieLabel,
+} from 'recharts';
 import { useToast } from "@/hooks/use-toast"
+
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8'];
 
 interface Message {
   role: 'user' | 'assistant'
@@ -16,6 +47,7 @@ interface Message {
   type?: 'text' | 'statistics'
   statistics?: any
   userRole?: string
+  isChart?: boolean
 }
 
 interface ChatbotProps {
@@ -41,6 +73,7 @@ export function Chatbot({
   ])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [chartData, setChartData] = useState<any>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -71,9 +104,10 @@ export function Chatbot({
     setMessages(prev => [...prev, userMessage])
     setInput('')
     setIsLoading(true)
+    setChartData(null);
 
     try {
-      const response = await fetch('/api/chatbot', {
+      const responseText = await fetch('/api/chatbot', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -85,13 +119,13 @@ export function Chatbot({
         })
       })
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
-        console.error('API error:', response.status, errorData)
-        throw new Error(errorData.error || `Server error: ${response.status}`)
+      if (!responseText.ok) {
+        const errorData = await responseText.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('API error:', responseText.status, errorData)
+        throw new Error(errorData.error || `Server error: ${responseText.status}`)
       }
 
-      const data = await response.json()
+      const data = await responseText.json()
 
       // Check if this is a statistics response
       if (data.type === 'statistics' && data.stats) {
@@ -102,6 +136,17 @@ export function Chatbot({
           type: 'statistics',
           statistics: data.stats,
           userRole: data.userRole
+        }
+        setMessages(prev => [...prev, assistantMessage])
+      } else if (data.hasCharts && data.chartData) {
+        // Handle function calling response with charts
+        setChartData(data.chartData)
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: data.response,
+          timestamp: new Date(),
+          type: 'text',
+          isChart: true
         }
         setMessages(prev => [...prev, assistantMessage])
       } else if (data.response) {
@@ -156,7 +201,6 @@ export function Chatbot({
           </div>
           <div>
             <h3 className="font-semibold text-sm">AI Assistant</h3>
-            <p className="text-xs text-muted-foreground">Powered by Gemini AI</p>
           </div>
         </div>
         {variant === 'floating' && (
@@ -172,45 +216,51 @@ export function Chatbot({
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.map((message, index) => (
+        {messages.map((msg, index) => (
           <div
             key={index}
-            className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            {message.type === 'statistics' ? (
+            {msg.type === 'statistics' ? (
               <div className="w-full">
                 <div className="bg-white/3 backdrop-blur-sm border border-white/5 rounded-2xl px-4 py-2 mb-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <BarChart3 className="h-4 w-4 text-primary" />
-                    <p className="text-sm">{message.content}</p>
+                    <BarChartIcon className="h-4 w-4 text-primary" />
+                    <p className="text-sm">{msg.content}</p>
                   </div>
                   <p className="text-xs opacity-60">
-                    {message.timestamp.toLocaleTimeString([], { 
+                    {msg.timestamp.toLocaleTimeString([], { 
                       hour: '2-digit', 
                       minute: '2-digit' 
                     })}
                   </p>
                 </div>
                 <StatisticsCharts 
-                  data={message.statistics} 
-                  userRole={message.userRole as 'MANAGER' | 'ADMIN'} 
+                  data={msg.statistics} 
+                  userRole={msg.userRole as 'MANAGER' | 'ADMIN'} 
                 />
               </div>
             ) : (
               <div
                 className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                  message.role === 'user'
+                  msg.role === 'user'
                     ? 'bg-primary text-primary-foreground'
                     : 'bg-white/3 backdrop-blur-sm border border-white/5'
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                 <p className="text-xs opacity-60 mt-1">
-                  {message.timestamp.toLocaleTimeString([], { 
+                  {msg.timestamp.toLocaleTimeString([], { 
                     hour: '2-digit', 
                     minute: '2-digit' 
                   })}
                 </p>
+                {msg.isChart && chartData && (
+                  <div className="mt-4">
+                    {(session?.user as any)?.role === 'ADMIN' && <AdminCharts data={chartData} />}
+                    {(session?.user as any)?.role === 'MANAGER' && <ManagerCharts data={chartData} />}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -307,4 +357,82 @@ export function Chatbot({
       )}
     </>
   )
+}
+
+function AdminCharts({ data }: { data: any }) {
+  return (
+    <div className="space-y-6">
+      <h3 className="font-bold text-lg">Admin Statistics</h3>
+      <GlassCard>
+        <h4 className="font-semibold">Total Expenses</h4>
+        <p className="text-2xl font-bold">₹{data.totalExpenses.toFixed(2)}</p>
+        <h4 className="font-semibold mt-4">Total Users</h4>
+        <p className="text-2xl font-bold">{data.totalUsers}</p>
+      </GlassCard>
+      <GlassCard title="Expenses by Category">
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie data={data.expensesByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>
+              {data.expensesByCategory.map((entry: any, index: number) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </GlassCard>
+      <GlassCard title="Expenses by Status">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={data.expensesByStatus}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="value" fill="#82ca9d" />
+          </BarChart>
+        </ResponsiveContainer>
+      </GlassCard>
+    </div>
+  );
+}
+
+function ManagerCharts({ data }: { data: any }) {
+  return (
+    <div className="space-y-6">
+      <h3 className="font-bold text-lg">Manager Statistics</h3>
+      <GlassCard>
+        <h4 className="font-semibold">Total Team Expenses</h4>
+        <p className="text-2xl font-bold">₹{data.totalTeamExpenses.toFixed(2)}</p>
+        <h4 className="font-semibold mt-4">Team Size</h4>
+        <p className="text-2xl font-bold">{data.teamSize}</p>
+      </GlassCard>
+      <GlassCard title="Team Expenses by Category">
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart>
+            <Pie data={data.teamExpensesByCategory} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} fill="#8884d8" label>
+              {data.teamExpensesByCategory.map((entry: any, index: number) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </GlassCard>
+      <GlassCard title="Team Expenses by User">
+        <ResponsiveContainer width="100%" height={300}>
+          <BarChart data={data.teamExpensesByUser}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="name" />
+            <YAxis />
+            <Tooltip />
+            <Legend />
+            <Bar dataKey="value" fill="#8884d8" />
+          </BarChart>
+        </ResponsiveContainer>
+      </GlassCard>
+    </div>
+  );
 }
