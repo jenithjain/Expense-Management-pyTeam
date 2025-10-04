@@ -1,11 +1,18 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
+export interface IApprover {
+  approverId: Types.ObjectId;
+  approverName: string;
+  stepNumber: number;
+  required: boolean;
+}
+
 export interface IApprovalRule extends Document {
   companyId: Types.ObjectId;
   category: string;
   minAmount?: number;
   maxAmount?: number;
-  approvers: Types.ObjectId[];
+  approvers: IApprover[];
   requireAllApprovers: boolean;
   minApprovalPercentage?: number;
   specificApproverId?: Types.ObjectId;
@@ -13,6 +20,30 @@ export interface IApprovalRule extends Document {
   createdAt: Date;
   updatedAt: Date;
 }
+
+const ApproverSchema = new Schema<IApprover>(
+  {
+    approverId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+    },
+    approverName: {
+      type: String,
+      required: true,
+    },
+    stepNumber: {
+      type: Number,
+      required: true,
+      default: 0,
+    },
+    required: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  { _id: false }
+);
 
 const ApprovalRuleSchema = new Schema<IApprovalRule>(
   {
@@ -34,10 +65,7 @@ const ApprovalRuleSchema = new Schema<IApprovalRule>(
       type: Number,
       min: 0,
     },
-    approvers: [{
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-    }],
+    approvers: [ApproverSchema],
     requireAllApprovers: {
       type: Boolean,
       default: true,
@@ -64,6 +92,11 @@ const ApprovalRuleSchema = new Schema<IApprovalRule>(
 // Index for faster queries
 ApprovalRuleSchema.index({ companyId: 1, category: 1 });
 
-const ApprovalRule: Model<IApprovalRule> = mongoose.models.ApprovalRule || mongoose.model<IApprovalRule>('ApprovalRule', ApprovalRuleSchema);
+// Clear the model if it exists to force new schema
+if (mongoose.models.ApprovalRule) {
+  delete mongoose.models.ApprovalRule;
+}
+
+const ApprovalRule: Model<IApprovalRule> = mongoose.model<IApprovalRule>('ApprovalRule', ApprovalRuleSchema);
 
 export default ApprovalRule;

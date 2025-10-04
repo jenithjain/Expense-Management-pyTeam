@@ -50,10 +50,19 @@ export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || session.user.role !== UserRole.ADMIN) {
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Case-insensitive role check
+    const userRole = session.user.role?.toUpperCase();
+    if (userRole !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
-        { status: 401 }
+        { status: 403 }
       );
     }
 
@@ -77,15 +86,23 @@ export async function POST(req: NextRequest) {
 
     await dbConnect();
 
+    // Convert approverId strings to ObjectIds
+    const processedApprovers = approvers.map((approver: any) => ({
+      approverId: new mongoose.Types.ObjectId(approver.approverId),
+      approverName: approver.approverName,
+      stepNumber: approver.stepNumber,
+      required: approver.required !== false,
+    }));
+
     const rule = await ApprovalRule.create({
       companyId: new mongoose.Types.ObjectId(session.user.companyId),
       category,
       minAmount: minAmount || undefined,
       maxAmount: maxAmount || undefined,
-      approvers,
+      approvers: processedApprovers,
       requireAllApprovers: requireAllApprovers !== false,
       minApprovalPercentage: minApprovalPercentage || undefined,
-      specificApproverId: specificApproverId || undefined,
+      specificApproverId: specificApproverId ? new mongoose.Types.ObjectId(specificApproverId) : undefined,
       isManagerFirst: isManagerFirst !== false,
     });
 

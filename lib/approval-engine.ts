@@ -89,14 +89,16 @@ export async function initiateApprovalFlow(
   }
 
   // Create approval requests for all approvers in the rule (sequential)
-  for (const approverId of rule.approvers) {
+  // Sort by stepNumber to ensure correct order
+  const sortedApprovers = [...rule.approvers].sort((a, b) => a.stepNumber - b.stepNumber);
+  
+  for (const approver of sortedApprovers) {
     await ApprovalRequest.create({
       expenseId: expense._id,
-      approverId,
-      stepNumber,
+      approverId: approver.approverId,
+      stepNumber: approver.stepNumber,
       status: ApprovalStatus.PENDING,
     });
-    stepNumber++;
   }
 
   expense.currentApprovalStep = 0;

@@ -12,10 +12,19 @@ export async function DELETE(
   try {
     const session = await getServerSession(authOptions);
 
-    if (!session || session.user.role !== UserRole.ADMIN) {
+    if (!session) {
+      return NextResponse.json(
+        { error: 'Unauthorized' },
+        { status: 401 }
+      );
+    }
+
+    // Case-insensitive role check
+    const userRole = session.user.role?.toUpperCase();
+    if (userRole !== 'ADMIN') {
       return NextResponse.json(
         { error: 'Unauthorized - Admin access required' },
-        { status: 401 }
+        { status: 403 }
       );
     }
 
