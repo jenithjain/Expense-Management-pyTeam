@@ -1,5 +1,12 @@
 # 💼 Expense Management System
 
+# Demo Video:
+
+
+https://github.com/user-attachments/assets/b6e7635a-6f15-4b65-b2cf-27f4fce6e623
+
+
+
 An intelligent, scalable expense management platform designed to **automate** and **streamline** reimbursement workflows for modern companies.
 
 This system replaces time-consuming manual processes with a **transparent, rule-based engine**, featuring **multi-level approvals** and **OCR-powered receipt scanning**.
@@ -100,7 +107,7 @@ This project solves these challenges by providing a robust platform to:
 - **Backend** : Next.js.
 - **DataBase** : MongoDB
 - **Visuals**: Three.js  
-- **OCR Service**: Google Cloud Vision API  
+- **OCR Service**: Google Cloud Vision API  and Large language Model for AI Asistant 
 - **External APIs**:
   - Countries & Currencies: [restcountries.com](https://restcountries.com)
   - Currency Conversion: [exchangerate-api.com](https://www.exchangerate-api.com)
