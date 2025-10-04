@@ -4,6 +4,7 @@ import { Chatbot } from "@/components/shared/chatbot"
 import { GL } from "@/components/gl"
 
 const ADMIN_SUGGESTED_QUESTIONS = [
+  "Show me company-wide analytics and statistics",
   "Who is the manager for Sameer Gupta?",
   "What's the approval rule for Marketing department?",
   "Show me the approval sequence for expenses over ₹50,000",

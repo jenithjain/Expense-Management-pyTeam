@@ -5,13 +5,17 @@ import { useSession } from "next-auth/react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { GlassCard } from "@/components/shared/glass-card"
-import { MessageCircle, Send, X, Loader2, Sparkles } from "lucide-react"
+import { StatisticsCharts } from "@/components/shared/statistics-charts"
+import { MessageCircle, Send, X, Loader2, Sparkles, BarChart3 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  type?: 'text' | 'statistics'
+  statistics?: any
+  userRole?: string
 }
 
 interface ChatbotProps {
@@ -82,30 +86,47 @@ export function Chatbot({
       })
 
       if (!response.ok) {
-        throw new Error('Failed to get response')
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }))
+        console.error('API error:', response.status, errorData)
+        throw new Error(errorData.error || `Server error: ${response.status}`)
       }
 
       const data = await response.json()
 
-      const assistantMessage: Message = {
-        role: 'assistant',
-        content: data.response,
-        timestamp: new Date()
+      // Check if this is a statistics response
+      if (data.type === 'statistics' && data.stats) {
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: 'Here are the analytics and statistics you requested:',
+          timestamp: new Date(),
+          type: 'statistics',
+          statistics: data.stats,
+          userRole: data.userRole
+        }
+        setMessages(prev => [...prev, assistantMessage])
+      } else if (data.response) {
+        const assistantMessage: Message = {
+          role: 'assistant',
+          content: data.response,
+          timestamp: new Date(),
+          type: 'text'
+        }
+        setMessages(prev => [...prev, assistantMessage])
+      } else {
+        throw new Error('No response from server')
       }
-
-      setMessages(prev => [...prev, assistantMessage])
     } catch (error: any) {
       console.error('Chat error:', error)
       toast({
         title: "Error",
-        description: "Failed to get response. Please try again.",
+        description: error.message || "Failed to get response. Please try again.",
         variant: "destructive"
       })
 
       // Add error message
       setMessages(prev => [...prev, {
         role: 'assistant',
-        content: "I'm sorry, I encountered an error. Please try again or contact support if the issue persists.",
+        content: `I'm sorry, I encountered an error: ${error.message}. Please try again or contact support if the issue persists.`,
         timestamp: new Date()
       }])
     } finally {
@@ -113,14 +134,19 @@ export function Chatbot({
     }
   }
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendMessage()
     }
   }
 
-  const ChatContent = () => (
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value)
+  }
+
+  // Render the chat content directly
+  const chatContent = (
     <div className="flex flex-col h-full">
       {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-white/5">
@@ -151,21 +177,42 @@ export function Chatbot({
             key={index}
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
-            <div
-              className={`max-w-[80%] rounded-2xl px-4 py-2 ${
-                message.role === 'user'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-white/3 backdrop-blur-sm border border-white/5'
-              }`}
-            >
-              <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-              <p className="text-xs opacity-60 mt-1">
-                {message.timestamp.toLocaleTimeString([], { 
-                  hour: '2-digit', 
-                  minute: '2-digit' 
-                })}
-              </p>
-            </div>
+            {message.type === 'statistics' ? (
+              <div className="w-full">
+                <div className="bg-white/3 backdrop-blur-sm border border-white/5 rounded-2xl px-4 py-2 mb-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <BarChart3 className="h-4 w-4 text-primary" />
+                    <p className="text-sm">{message.content}</p>
+                  </div>
+                  <p className="text-xs opacity-60">
+                    {message.timestamp.toLocaleTimeString([], { 
+                      hour: '2-digit', 
+                      minute: '2-digit' 
+                    })}
+                  </p>
+                </div>
+                <StatisticsCharts 
+                  data={message.statistics} 
+                  userRole={message.userRole as 'MANAGER' | 'ADMIN'} 
+                />
+              </div>
+            ) : (
+              <div
+                className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+                  message.role === 'user'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-white/3 backdrop-blur-sm border border-white/5'
+                }`}
+              >
+                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <p className="text-xs opacity-60 mt-1">
+                  {message.timestamp.toLocaleTimeString([], { 
+                    hour: '2-digit', 
+                    minute: '2-digit' 
+                  })}
+                </p>
+              </div>
+            )}
           </div>
         ))}
         
@@ -202,18 +249,21 @@ export function Chatbot({
 
       {/* Input */}
       <div className="p-4 border-t border-white/5">
-        <div className="flex gap-2">
-          <Input
+        <form onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }} className="flex gap-2">
+          <input
             ref={inputRef}
+            type="text"
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyPress}
             placeholder={placeholder}
             disabled={isLoading}
-            className="flex-1 bg-white/5 border-white/10"
+            autoComplete="off"
+            className="flex-1 bg-white/5 border border-white/10 text-white placeholder:text-white/40 rounded-md px-3 py-2 outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary/50"
           />
           <Button
-            onClick={() => handleSendMessage()}
+            type="submit"
+            onClick={(e) => { e.preventDefault(); handleSendMessage(); }}
             disabled={!input.trim() || isLoading}
           >
             {isLoading ? (
@@ -222,7 +272,7 @@ export function Chatbot({
               <Send className="h-4 w-4" />
             )}
           </Button>
-        </div>
+        </form>
       </div>
     </div>
   )
@@ -230,7 +280,7 @@ export function Chatbot({
   if (variant === 'embedded') {
     return (
       <GlassCard className="h-[600px]">
-        <ChatContent />
+        {chatContent}
       </GlassCard>
     )
   }
@@ -251,7 +301,7 @@ export function Chatbot({
       {isOpen && (
         <div className="fixed bottom-6 right-6 w-96 h-[600px] z-50">
           <GlassCard className="h-full shadow-2xl">
-            <ChatContent />
+            {chatContent}
           </GlassCard>
         </div>
       )}

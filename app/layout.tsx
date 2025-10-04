@@ -13,9 +13,8 @@ const geistMono = Geist_Mono({
 })
 
 export const metadata: Metadata = {
-  title: "Skal Ventures",
-  description: "Investment strategies that outperform the market",
-  generator: "v0.app",
+  title: "Expense Tracker",
+  description: "Track your expenses efficiently",
 }
 
 export default function RootLayout({

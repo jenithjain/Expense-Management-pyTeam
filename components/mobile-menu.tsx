@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 import * as Dialog from "@radix-ui/react-dialog"
 import { Menu, X } from "lucide-react"
 import Link from "next/link"
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useSession, signOut } from "next-auth/react"
 
 interface MobileMenuProps {
@@ -13,15 +13,42 @@ interface MobileMenuProps {
 
 export const MobileMenu = ({ className }: MobileMenuProps) => {
   const [isOpen, setIsOpen] = useState(false)
-  const { data: session } = useSession()
+  const [mounted, setMounted] = useState(false)
+  const { data: session, status } = useSession()
 
-  const menuItems = [
-    { name: "Home", href: "/" },
-    { name: "Employee", href: "/employee" },
-    { name: "AI Assistant", href: "/employee/assistant" },
-    { name: "Manager", href: "/manager" },
-    { name: "Admin", href: "/admin" },
-  ]
+  // Ensure component is mounted before rendering navigation
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
+  // Define navigation items based on user role
+  const getNavigationItems = () => {
+    const userRole = session?.user?.role
+    
+    const baseItems = [
+      { name: "Home", href: "/", roles: ["ADMIN", "MANAGER", "EMPLOYEE"] }
+    ]
+
+    const roleBasedItems = [
+      { name: "Employee", href: "/employee", roles: ["EMPLOYEE", "MANAGER", "ADMIN"] },
+      { name: "AI Assistant", href: "/employee/assistant", roles: ["EMPLOYEE", "MANAGER", "ADMIN"] },
+      { name: "Manager", href: "/manager", roles: ["MANAGER", "ADMIN"] },
+      { name: "Admin", href: "/admin", roles: ["ADMIN"] },
+    ]
+
+    const allItems = [...baseItems, ...roleBasedItems]
+
+    // If user is not logged in, show only Home
+    if (!userRole) {
+      return [{ name: "Home", href: "/" }]
+    }
+
+    // Filter items based on user role
+    return allItems.filter(item => item.roles.includes(userRole))
+  }
+
+  // Wait for mount before rendering filtered items
+  const menuItems = mounted ? getNavigationItems() : [{ name: "Home", href: "/" }]
 
   const handleLinkClick = () => {
     setIsOpen(false)
@@ -69,24 +96,48 @@ export const MobileMenu = ({ className }: MobileMenuProps) => {
               </Link>
             ))}
 
-            <div className="mt-6">
-              {session ? (
-                <button
-                  onClick={handleSignOut}
-                  className="inline-block text-xl font-mono uppercase text-primary transition-colors ease-out duration-150 hover:text-primary/80 py-2"
-                >
-                  Sign Out
-                </button>
-              ) : (
-                <Link
-                  href="/auth/login"
-                  onClick={handleLinkClick}
-                  className="inline-block text-xl font-mono uppercase text-primary transition-colors ease-out duration-150 hover:text-primary/80 py-2"
-                >
-                  Sign In
-                </Link>
-              )}
-            </div>
+            {mounted && (
+              <div className="mt-6 space-y-4">
+                {session && (
+                  <div className="bg-white/5 rounded-lg p-4 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/20 border border-primary/30">
+                        <span className="text-sm font-bold text-primary uppercase">
+                          {session.user?.role?.charAt(0) || 'U'}
+                        </span>
+                      </div>
+                      <div>
+                        <div className="text-base font-medium text-foreground">
+                          {session.user?.name}
+                        </div>
+                        <div className="text-sm text-foreground/60">
+                          {session.user?.email}
+                        </div>
+                        <div className="text-xs text-primary font-mono uppercase">
+                          {session.user?.role}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {session ? (
+                  <button
+                    onClick={handleSignOut}
+                    className="inline-block text-xl font-mono uppercase text-primary transition-colors ease-out duration-150 hover:text-primary/80 py-2"
+                  >
+                    Sign Out
+                  </button>
+                ) : (
+                  <Link
+                    href="/auth/login"
+                    onClick={handleLinkClick}
+                    className="inline-block text-xl font-mono uppercase text-primary transition-colors ease-out duration-150 hover:text-primary/80 py-2"
+                  >
+                    Sign In
+                  </Link>
+                )}
+              </div>
+            )}
           </nav>
         </Dialog.Content>
       </Dialog.Portal>

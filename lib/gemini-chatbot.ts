@@ -10,6 +10,24 @@ export interface ChatbotContext {
   userRole: 'employee' | 'manager' | 'admin';
   userName: string;
   companyId: string;
+  expenseData?: {
+    totalExpenses: number;
+    pendingExpenses: number;
+    approvedExpenses: number;
+    rejectedExpenses: number;
+    totalAmount: number;
+    recentExpenses: Array<{
+      id: string;
+      merchantName: string;
+      amount: number;
+      originalCurrency: string;
+      category: string;
+      status: string;
+      date: string;
+      description?: string;
+      employeeName?: string;
+    }>;
+  } | null;
 }
 
 /**
@@ -80,6 +98,22 @@ Current User Context:
 - Role: ${context.userRole}
 - User ID: ${context.userId}
 - Company ID: ${context.companyId}
+
+${context.expenseData ? `
+Current Expense Data:
+- Total Expenses: ${context.expenseData.totalExpenses}
+- Pending: ${context.expenseData.pendingExpenses}
+- Approved: ${context.expenseData.approvedExpenses}
+- Rejected: ${context.expenseData.rejectedExpenses}
+- Total Amount: ₹${context.expenseData.totalAmount.toFixed(2)}
+
+Recent Expenses:
+${context.expenseData.recentExpenses.map((exp, idx) => 
+  `${idx + 1}. ${exp.merchantName} - ₹${exp.amount} (${exp.category}) - Status: ${exp.status}${exp.date ? ` - Date: ${new Date(exp.date).toLocaleDateString()}` : ''}${exp.employeeName ? ` - Employee: ${exp.employeeName}` : ''}`
+).join('\n')}
+
+When answering questions about expenses, use this actual data from the database. Be specific and reference actual expense details when relevant.
+` : 'Note: Expense data is currently unavailable.'}
 
 `;
 
@@ -193,6 +227,11 @@ export function extractActionIntent(message: string): {
   // Status check
   if (lowerMessage.includes('status') || lowerMessage.includes('track')) {
     return { action: 'check_status', params: {} };
+  }
+
+  // Statistics actions
+  if (lowerMessage.includes('statistic') || lowerMessage.includes('chart') || lowerMessage.includes('analytics') || lowerMessage.includes('report')) {
+    return { action: 'show_stats', params: {} };
   }
 
   return { action: null, params: {} };

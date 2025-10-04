@@ -4,8 +4,9 @@ import { Chatbot } from "@/components/shared/chatbot"
 import { GL } from "@/components/gl"
 
 const MANAGER_SUGGESTED_QUESTIONS = [
+  "Show me team analytics and statistics",
   "How many expenses are pending my approval?",
-  "Show me pending expenses over ₹10,000",
+  "Show me pending expenses over ₹10,000", 
   "What's my team's total spend this month?",
   "Who are the top 3 spenders on my team?",
   "Show me all rejected expenses from last week",
