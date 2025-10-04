@@ -3,10 +3,10 @@ import { getServerSession } from 'next-auth';
 import dbConnect from '@/lib/mongodb';
 import Expense, { ExpenseStatus } from '@/models/Expense';
 import Company from '@/models/Company';
-import User from '@/models/User';
-import ApprovalRequest, { ApprovalStatus } from '@/models/ApprovalRequest';
 import { convertCurrency } from '@/lib/currency';
+import { initiateApprovalFlow } from '@/lib/approval-engine';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import mongoose from 'mongoose';
 
 export async function POST(req: NextRequest) {
   try {
@@ -75,29 +75,20 @@ export async function POST(req: NextRequest) {
       merchantName,
       date: new Date(date),
       status: ExpenseStatus.PENDING,
-      employeeId: session.user.id,
-      companyId: session.user.companyId,
+      employeeId: new mongoose.Types.ObjectId(session.user.id),
+      companyId: new mongoose.Types.ObjectId(session.user.companyId),
       receiptUrl: receiptUrl || undefined,
       currentApprovalStep: 0,
       expenseLines: expenseLines || [],
     });
 
-    // Check if employee has a manager with isManagerApprover=true
-    const employee = await User.findById(session.user.id);
-    if (employee?.managerId && employee?.isManagerApprover) {
-      const manager = await User.findById(employee.managerId);
-      
-      if (manager) {
-        // Create approval request for the manager
-        await ApprovalRequest.create({
-          expenseId: expense._id,
-          approverId: manager._id,
-          stepNumber: 0,
-          status: ApprovalStatus.PENDING,
-        });
-      }
+    // Initiate approval flow
+    try {
+      await initiateApprovalFlow((expense as any)._id.toString(), session.user.id);
+    } catch (error: any) {
+      console.error('Approval flow error:', error);
+      // Continue even if approval flow fails - expense is created
     }
-    // If no manager approver, the approval rule flow will be initiated separately
 
     const populatedExpense = await Expense.findById(expense._id)
       .populate('employeeId', 'name email')
@@ -118,3 +109,4 @@ export async function POST(req: NextRequest) {
     );
   }
 }
+

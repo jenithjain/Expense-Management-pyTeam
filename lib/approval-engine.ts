@@ -1,27 +1,47 @@
 import dbConnect from './mongodb';
 import ApprovalRequest, { ApprovalStatus } from '@/models/ApprovalRequest';
 import Expense, { ExpenseStatus } from '@/models/Expense';
-import ApprovalRule, { RuleType } from '@/models/ApprovalRule';
+import ApprovalRule from '@/models/ApprovalRule';
+import User from '@/models/User';
 import { Types } from 'mongoose';
 
 /**
- * Initiate approval flow based on rule
+ * Find matching approval rule for an expense
+ */
+export async function findMatchingRule(
+  companyId: string | Types.ObjectId,
+  category: string,
+  amount: number
+): Promise<any | null> {
+  await dbConnect();
+
+  const rules = await ApprovalRule.find({
+    companyId,
+    category,
+  });
+
+  // Filter rules by amount range
+  const matchingRule = rules.find((rule) => {
+    const minMatch = !rule.minAmount || amount >= rule.minAmount;
+    const maxMatch = !rule.maxAmount || amount <= rule.maxAmount;
+    return minMatch && maxMatch;
+  });
+
+  return matchingRule || null;
+}
+
+/**
+ * Initiate approval flow for an expense
  */
 export async function initiateApprovalFlow(
   expenseId: string | Types.ObjectId,
-  ruleId: string | Types.ObjectId
+  employeeId: string | Types.ObjectId
 ): Promise<void> {
   await dbConnect();
 
-  const rule = await ApprovalRule.findById(ruleId);
   const expense = await Expense.findById(expenseId);
-
-  if (!rule || !expense) {
-    throw new Error('Rule or Expense not found');
-  }
-
-  if (!rule.isActive) {
-    throw new Error('Approval rule is not active');
+  if (!expense) {
+    throw new Error('Expense not found');
   }
 
   // Check if approval requests already exist
@@ -33,43 +53,54 @@ export async function initiateApprovalFlow(
     throw new Error('Approval flow already initiated for this expense');
   }
 
-  switch (rule.ruleType) {
-    case RuleType.SEQUENTIAL:
-      // Create only the first step approval request
-      if (rule.approvalSteps.length > 0) {
-        const firstStep = rule.approvalSteps.sort((a, b) => a.stepNumber - b.stepNumber)[0];
-        
-        await ApprovalRequest.create({
-          expenseId: expense._id,
-          approverId: firstStep.approverId,
-          stepNumber: firstStep.stepNumber,
-          status: ApprovalStatus.PENDING,
-        });
+  // Find matching rule
+  const rule = await findMatchingRule(
+    expense.companyId,
+    expense.category,
+    expense.convertedAmount
+  );
 
-        expense.currentApprovalStep = firstStep.stepNumber;
-        await expense.save();
-      }
-      break;
-
-    case RuleType.PERCENTAGE:
-    case RuleType.SPECIFIC_APPROVER:
-    case RuleType.HYBRID:
-      // Create approval requests for all approvers in the rule
-      const approvalPromises = rule.approvalSteps.map((step) =>
-        ApprovalRequest.create({
-          expenseId: expense._id,
-          approverId: step.approverId,
-          stepNumber: step.stepNumber,
-          status: ApprovalStatus.PENDING,
-        })
-      );
-
-      await Promise.all(approvalPromises);
-      break;
-
-    default:
-      throw new Error('Invalid rule type');
+  if (!rule) {
+    // No rule found - auto-approve or require default approval
+    expense.status = ExpenseStatus.APPROVED;
+    await expense.save();
+    return;
   }
+
+  // Get employee info
+  const employee = await User.findById(employeeId).populate('managerId');
+
+  // Create approval requests based on rule
+  let stepNumber = 0;
+
+  // If isManagerFirst, create manager approval first
+  if (rule.isManagerFirst && employee?.managerId) {
+    const manager = employee.managerId as any;
+    
+    if (manager.isManagerApprover) {
+      await ApprovalRequest.create({
+        expenseId: expense._id,
+        approverId: manager._id,
+        stepNumber,
+        status: ApprovalStatus.PENDING,
+      });
+      stepNumber++;
+    }
+  }
+
+  // Create approval requests for all approvers in the rule (sequential)
+  for (const approverId of rule.approvers) {
+    await ApprovalRequest.create({
+      expenseId: expense._id,
+      approverId,
+      stepNumber,
+      status: ApprovalStatus.PENDING,
+    });
+    stepNumber++;
+  }
+
+  expense.currentApprovalStep = 0;
+  await expense.save();
 }
 
 /**
@@ -115,129 +146,86 @@ export async function processApproval(
     };
   }
 
-  // If approved, check if approval is complete
-  // First, find the rule being used (if any)
+  // Get all approval requests for this expense
   const allApprovals = await ApprovalRequest.find({
     expenseId: expense._id,
-  }).populate('approverId');
+  }).sort({ stepNumber: 1 });
 
-  // Try to find the rule (we'll need to determine which rule is being used)
-  // For now, we'll check if it's sequential based on step numbers
-  const isSequential = allApprovals.some((a) => a.stepNumber > 0);
+  // Find the matching rule
+  const rule = await findMatchingRule(
+    expense.companyId,
+    expense.category,
+    expense.convertedAmount
+  );
 
-  if (isSequential) {
-    // Sequential flow: create next step if exists
-    const currentStep = approvalRequest.stepNumber;
-    const nextApproval = await ApprovalRequest.findOne({
-      expenseId: expense._id,
-      stepNumber: { $gt: currentStep },
-    }).sort({ stepNumber: 1 });
+  if (!rule) {
+    // No rule - approve immediately
+    expense.status = ExpenseStatus.APPROVED;
+    await expense.save();
+    return {
+      status: ExpenseStatus.APPROVED,
+      message: 'Expense fully approved',
+    };
+  }
 
-    if (nextApproval) {
-      // Next step exists, keep expense pending
-      expense.currentApprovalStep = nextApproval.stepNumber;
-      await expense.save();
-      return {
-        status: ExpenseStatus.PENDING,
-        message: 'Approved. Awaiting next step approval.',
-      };
-    } else {
-      // No more steps, approve the expense
+  // Check if specific approver approved (auto-approve condition)
+  if (rule.specificApproverId) {
+    const specificApproval = allApprovals.find(
+      (a) => a.approverId.toString() === rule.specificApproverId.toString()
+    );
+
+    if (specificApproval?.status === ApprovalStatus.APPROVED) {
       expense.status = ExpenseStatus.APPROVED;
       await expense.save();
       return {
         status: ExpenseStatus.APPROVED,
-        message: 'Expense fully approved',
+        message: 'Expense auto-approved by specific approver',
       };
     }
-  } else {
-    // Non-sequential: check completion based on all approvals
+  }
+
+  // Check percentage-based approval
+  if (rule.minApprovalPercentage) {
     const approvedCount = allApprovals.filter(
       (a) => a.status === ApprovalStatus.APPROVED
     ).length;
-    const totalCount = allApprovals.length;
+    const percentage = (approvedCount / allApprovals.length) * 100;
 
-    // Simple majority for now (can be enhanced with rule lookup)
-    if (approvedCount >= Math.ceil(totalCount / 2)) {
+    if (percentage >= rule.minApprovalPercentage) {
+      expense.status = ExpenseStatus.APPROVED;
+      await expense.save();
+      return {
+        status: ExpenseStatus.APPROVED,
+        message: `Expense approved (${percentage.toFixed(0)}% approval reached)`,
+      };
+    }
+  }
+
+  // Check if all approvers approved (sequential or require all)
+  if (rule.requireAllApprovers) {
+    const allApproved = allApprovals.every(
+      (a) => a.status === ApprovalStatus.APPROVED
+    );
+
+    if (allApproved) {
       expense.status = ExpenseStatus.APPROVED;
       await expense.save();
       return {
         status: ExpenseStatus.APPROVED,
         message: 'Expense fully approved',
       };
-    } else {
-      return {
-        status: ExpenseStatus.PENDING,
-        message: 'Approved. Awaiting more approvals.',
-      };
     }
   }
-}
 
-/**
- * Check if approval is complete based on rule
- */
-export async function checkApprovalCompletion(
-  expenseId: string | Types.ObjectId,
-  rule: any
-): Promise<boolean> {
-  await dbConnect();
-
-  const approvals = await ApprovalRequest.find({
-    expenseId,
-  });
-
-  switch (rule.ruleType) {
-    case RuleType.SEQUENTIAL:
-      // Check if last step is approved
-      const sortedSteps = rule.approvalSteps.sort(
-        (a: any, b: any) => b.stepNumber - a.stepNumber
-      );
-      const lastStep = sortedSteps[0];
-
-      const lastApproval = approvals.find(
-        (a) =>
-          a.stepNumber === lastStep.stepNumber &&
-          a.approverId.toString() === lastStep.approverId.toString()
-      );
-
-      return lastApproval?.status === ApprovalStatus.APPROVED;
-
-    case RuleType.PERCENTAGE:
-      // Calculate percentage of approved
-      const approvedCount = approvals.filter(
-        (a) => a.status === ApprovalStatus.APPROVED
-      ).length;
-      const percentage = (approvedCount / approvals.length) * 100;
-
-      return percentage >= (rule.percentageRequired || 50);
-
-    case RuleType.SPECIFIC_APPROVER:
-      // Check if specific approver approved
-      const specificApproval = approvals.find(
-        (a) => a.approverId.toString() === rule.specificApproverId.toString()
-      );
-
-      return specificApproval?.status === ApprovalStatus.APPROVED;
-
-    case RuleType.HYBRID:
-      // Either percentage OR specific approver
-      const approvedPercentage =
-        (approvals.filter((a) => a.status === ApprovalStatus.APPROVED).length /
-          approvals.length) *
-        100;
-
-      const specificApproved = approvals.some(
-        (a) =>
-          a.approverId.toString() === rule.specificApproverId.toString() &&
-          a.status === ApprovalStatus.APPROVED
-      );
-
-      return (
-        approvedPercentage >= (rule.percentageRequired || 50) || specificApproved
-      );
-
-    default:
-      return false;
+  // Update current approval step
+  const nextPending = allApprovals.find((a) => a.status === ApprovalStatus.PENDING);
+  if (nextPending) {
+    expense.currentApprovalStep = nextPending.stepNumber;
+    await expense.save();
   }
+
+  return {
+    status: ExpenseStatus.PENDING,
+    message: 'Approved. Awaiting additional approvals.',
+  };
 }

@@ -4,6 +4,7 @@ import dbConnect from '@/lib/mongodb';
 import Expense from '@/models/Expense';
 import ApprovalRequest from '@/models/ApprovalRequest';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import mongoose from 'mongoose';
 
 export async function GET(req: NextRequest) {
   try {
@@ -23,9 +24,9 @@ export async function GET(req: NextRequest) {
 
     await dbConnect();
 
-    // Build query
+    // Build query - convert string ID to ObjectId
     const query: any = {
-      employeeId: session.user.id,
+      employeeId: new mongoose.Types.ObjectId(session.user.id),
     };
 
     if (status) {

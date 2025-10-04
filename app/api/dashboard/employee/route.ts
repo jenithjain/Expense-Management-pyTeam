@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import dbConnect from '@/lib/mongodb';
 import Expense, { ExpenseStatus } from '@/models/Expense';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
+import mongoose from 'mongoose';
 
 export async function GET(req: NextRequest) {
   try {
@@ -18,33 +19,36 @@ export async function GET(req: NextRequest) {
 
     await dbConnect();
 
+    // Convert string ID to ObjectId
+    const employeeObjectId = new mongoose.Types.ObjectId(session.user.id);
+
     // Count expenses by status
     const totalExpenses = await Expense.countDocuments({
-      employeeId: session.user.id,
+      employeeId: employeeObjectId,
     });
 
     const pendingExpenses = await Expense.countDocuments({
-      employeeId: session.user.id,
+      employeeId: employeeObjectId,
       status: ExpenseStatus.PENDING,
     });
 
     const approvedExpenses = await Expense.countDocuments({
-      employeeId: session.user.id,
+      employeeId: employeeObjectId,
       status: ExpenseStatus.APPROVED,
     });
 
     const rejectedExpenses = await Expense.countDocuments({
-      employeeId: session.user.id,
+      employeeId: employeeObjectId,
       status: ExpenseStatus.REJECTED,
     });
 
     // Fetch 10 most recent expenses
     const recentExpenses = await Expense.find({
-      employeeId: session.user.id,
+      employeeId: employeeObjectId,
     })
       .sort({ createdAt: -1 })
       .limit(10)
-      .select('amount convertedAmount category status date createdAt merchantName');
+      .select('amount convertedAmount category status date createdAt merchantName originalCurrency');
 
     // Aggregate current month's spending
     const now = new Date();
@@ -54,7 +58,7 @@ export async function GET(req: NextRequest) {
     const currentMonthSpending = await Expense.aggregate([
       {
         $match: {
-          employeeId: session.user.id,
+          employeeId: employeeObjectId,
           createdAt: {
             $gte: startOfMonth,
             $lte: endOfMonth,
@@ -73,7 +77,7 @@ export async function GET(req: NextRequest) {
     const spendingByCategory = await Expense.aggregate([
       {
         $match: {
-          employeeId: session.user.id,
+          employeeId: employeeObjectId,
           status: ExpenseStatus.APPROVED,
         },
       },
@@ -97,16 +101,45 @@ export async function GET(req: NextRequest) {
       },
     ]);
 
-    return NextResponse.json({
-      statistics: {
-        totalExpenses,
-        pendingExpenses,
-        approvedExpenses,
-        rejectedExpenses,
-        currentMonthSpending: currentMonthSpending[0]?.total || 0,
+    // Get user's company default currency
+    const User = (await import('@/models/User')).default;
+    const Company = (await import('@/models/Company')).default;
+    const user = await User.findById(session.user.id).populate('companyId');
+    const currency = (user?.companyId as any)?.defaultCurrency || 'USD';
+
+    // Calculate total amount from all approved expenses
+    const totalAmountData = await Expense.aggregate([
+      {
+        $match: {
+          employeeId: employeeObjectId,
+          status: ExpenseStatus.APPROVED,
+        },
       },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$convertedAmount' },
+        },
+      },
+    ]);
+
+    return NextResponse.json({
+      totalExpenses,
+      pendingExpenses,
+      approvedExpenses,
+      rejectedExpenses,
+      totalAmount: totalAmountData[0]?.total || 0,
+      currency,
+      currentMonthSpending: currentMonthSpending[0]?.total || 0,
       spendingByCategory,
-      recentExpenses,
+      recentExpenses: recentExpenses.map((expense: any) => ({
+        _id: expense._id,
+        merchantName: expense.merchantName || 'N/A',
+        amount: expense.amount || 0,
+        originalCurrency: expense.originalCurrency || 'USD',
+        status: expense.status || 'Pending',
+        date: expense.date || expense.createdAt,
+      })),
     });
   } catch (error: any) {
     console.error('Employee dashboard error:', error);

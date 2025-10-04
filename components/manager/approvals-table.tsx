@@ -108,7 +108,7 @@ export function ApprovalsTable() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          action,
+          action: action.toUpperCase(), // API expects APPROVE/REJECT
           comments: comments || undefined,
         }),
       })
@@ -118,13 +118,15 @@ export function ApprovalsTable() {
         throw new Error(data.error || `Failed to ${action}`)
       }
 
+      const result = await response.json()
+
       toast({
         title: `Expense ${action === 'approve' ? 'approved' : 'rejected'}`,
-        description: `The expense has been ${action === 'approve' ? 'approved' : 'rejected'} successfully.`,
+        description: result.message || `The expense has been ${action === 'approve' ? 'approved' : 'rejected'} successfully.`,
       })
 
-      // Remove from list
-      setApprovals(prev => prev.filter(a => a._id !== approvalId))
+      // Refresh the approvals list
+      await fetchApprovals()
       setSelectedApproval(null)
       setComments("")
     } catch (error: any) {

@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { Label } from "@/components/ui/label"
+import { Shield } from "lucide-react"
 
 type User = {
   _id: string
   name: string
   email: string
   role: "employee" | "manager" | "admin"
+  managerId?: string
   manager?: {
     _id: string
     name: string
@@ -53,6 +55,7 @@ export function UserManagement() {
       }
 
       const data = await response.json()
+      console.log('Fetched users:', data.users)
       setUsers(data.users || [])
     } catch (error: any) {
       toast({
@@ -66,7 +69,15 @@ export function UserManagement() {
     }
   }
 
-  const managers = useMemo(() => users.filter((u) => u.role === "manager" || u.role === "admin"), [users])
+  const managers = useMemo(() => {
+    const managerList = users.filter((u) => {
+      const role = u.role?.toLowerCase()
+      return role === "manager" || role === "admin"
+    })
+    console.log('Managers found:', managerList.length, managerList)
+    return managerList
+  }, [users])
+  
   const filtered = useMemo(
     () =>
       users.filter(
@@ -134,7 +145,17 @@ export function UserManagement() {
     }
   }
 
-  async function handleUpdateRole(userId: string, newRole: User["role"]) {
+  async function handleUpdateRole(userId: string, newRole: User["role"], currentRole: User["role"]) {
+    // Prevent changing admin role
+    if (currentRole === "admin") {
+      toast({
+        title: "Cannot change admin role",
+        description: "Admin users cannot have their role changed for security reasons.",
+        variant: "destructive",
+      })
+      return
+    }
+
     try {
       const response = await fetch('/api/users/update-role', {
         method: 'PATCH',
@@ -154,11 +175,11 @@ export function UserManagement() {
 
       toast({
         title: "Role updated",
-        description: "User role has been updated successfully.",
+        description: `User role has been updated to ${newRole}.`,
       })
 
-      // Update local state
-      setUsers(prev => prev.map(u => u._id === userId ? { ...u, role: newRole } : u))
+      // Update local state and refresh to update manager assignments if needed
+      await fetchUsers()
     } catch (error: any) {
       toast({
         title: "Failed to update role",
@@ -259,14 +280,20 @@ export function UserManagement() {
                 </Select>
               </TableCell>
               <TableCell className="min-w-[160px]">
-                <Select value={newUser.managerId} onValueChange={(v) => setNewUser((n) => ({ ...n, managerId: v }))}>
+                <Select value={newUser.managerId || "none"} onValueChange={(v) => setNewUser((n) => ({ ...n, managerId: v === "none" ? "" : v }))}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Manager" />
+                    <SelectValue placeholder="Select Manager" />
                   </SelectTrigger>
                   <SelectContent>
+                    <SelectItem value="none">No Manager</SelectItem>
+                    {managers.length === 0 && (
+                      <SelectItem value="no-managers" disabled>
+                        No managers available (create a manager/admin first)
+                      </SelectItem>
+                    )}
                     {managers.map((m) => (
                       <SelectItem key={m._id} value={m._id}>
-                        {m.name}
+                        {m.name} ({m.role})
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -304,10 +331,24 @@ export function UserManagement() {
 
             {filtered.map((u) => (
               <TableRow key={u._id} className="border-b border-border/30">
-                <TableCell className="font-medium text-white">{u.name}</TableCell>
+                <TableCell className="font-medium text-white">
+                  <div className="flex items-center gap-2">
+                    {u.name}
+                    {u.role === "admin" && (
+                      <span className="flex items-center gap-1 text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded" title="Admin role is protected and cannot be changed">
+                        <Shield className="w-3 h-3" />
+                        Protected
+                      </span>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>
-                  <Select value={u.role} onValueChange={(v) => handleUpdateRole(u._id, v as User["role"])}>
-                    <SelectTrigger>
+                  <Select 
+                    value={u.role} 
+                    onValueChange={(v) => handleUpdateRole(u._id, v as User["role"], u.role)}
+                    disabled={u.role === "admin"}
+                  >
+                    <SelectTrigger className={u.role === "admin" ? "opacity-60 cursor-not-allowed" : ""}>
                       <SelectValue placeholder="Role" />
                     </SelectTrigger>
                     <SelectContent>
@@ -319,25 +360,37 @@ export function UserManagement() {
                 </TableCell>
                 <TableCell>
                   <Select 
-                    value={u.manager?._id || ""} 
-                    onValueChange={(v) => handleAssignManager(u._id, v)}
+                    value={u.managerId || u.manager?._id || "none"} 
+                    onValueChange={(v) => {
+                      if (v !== "none") {
+                        handleAssignManager(u._id, v)
+                      }
+                    }}
                   >
                     <SelectTrigger>
-                      <SelectValue placeholder="Manager" />
+                      <SelectValue placeholder="Select Manager" />
                     </SelectTrigger>
                     <SelectContent>
-                      {managers.map((m) => (
-                        <SelectItem key={m._id} value={m._id}>
-                          {m.name}
+                      <SelectItem value="none">No Manager</SelectItem>
+                      {managers.length === 0 && (
+                        <SelectItem value="no-managers" disabled>
+                          No managers available
                         </SelectItem>
-                      ))}
+                      )}
+                      {managers
+                        .filter((m) => m._id !== u._id) // Don't allow self-assignment
+                        .map((m) => (
+                          <SelectItem key={m._id} value={m._id}>
+                            {m.name} ({m.role})
+                          </SelectItem>
+                        ))}
                     </SelectContent>
                   </Select>
                 </TableCell>
                 <TableCell className="text-white/90">{u.email}</TableCell>
                 <TableCell>
                   <span className="text-sm text-white/70">
-                    {u.manager ? u.manager.name : "No manager"}
+                    {u.manager?.name || "No manager"}
                   </span>
                 </TableCell>
               </TableRow>

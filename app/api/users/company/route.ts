@@ -34,11 +34,23 @@ export async function GET(req: NextRequest) {
     const users = await User.find(query)
       .select('-password')
       .populate('managerId', 'name email')
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Transform managerId to manager for frontend compatibility
+    const transformedUsers = users.map((user: any) => ({
+      ...user,
+      manager: user.managerId ? {
+        _id: user.managerId._id?.toString() || user.managerId,
+        name: user.managerId.name,
+        email: user.managerId.email,
+      } : null,
+      managerId: user.managerId?._id?.toString() || user.managerId,
+    }));
 
     return NextResponse.json({
-      users,
-      total: users.length,
+      users: transformedUsers,
+      total: transformedUsers.length,
     });
   } catch (error: any) {
     console.error('Get company users error:', error);

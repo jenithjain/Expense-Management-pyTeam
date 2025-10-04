@@ -1,49 +1,18 @@
 import mongoose, { Schema, Document, Model, Types } from 'mongoose';
 
-export enum RuleType {
-  SEQUENTIAL = 'SEQUENTIAL',
-  PERCENTAGE = 'PERCENTAGE',
-  SPECIFIC_APPROVER = 'SPECIFIC_APPROVER',
-  HYBRID = 'HYBRID',
-}
-
-export interface IApprovalStep {
-  stepNumber: number;
-  approverId: Types.ObjectId;
-  isRequired: boolean;
-}
-
 export interface IApprovalRule extends Document {
   companyId: Types.ObjectId;
-  name: string;
-  ruleType: RuleType;
-  percentageRequired?: number;
+  category: string;
+  minAmount?: number;
+  maxAmount?: number;
+  approvers: Types.ObjectId[];
+  requireAllApprovers: boolean;
+  minApprovalPercentage?: number;
   specificApproverId?: Types.ObjectId;
-  approvalSteps: IApprovalStep[];
-  isActive: boolean;
+  isManagerFirst: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
-
-const ApprovalStepSchema = new Schema<IApprovalStep>(
-  {
-    stepNumber: {
-      type: Number,
-      required: true,
-      min: 1,
-    },
-    approverId: {
-      type: Schema.Types.ObjectId,
-      ref: 'User',
-      required: true,
-    },
-    isRequired: {
-      type: Boolean,
-      default: true,
-    },
-  },
-  { _id: false }
-);
 
 const ApprovalRuleSchema = new Schema<IApprovalRule>(
   {
@@ -52,17 +21,28 @@ const ApprovalRuleSchema = new Schema<IApprovalRule>(
       ref: 'Company',
       required: [true, 'Company ID is required'],
     },
-    name: {
+    category: {
       type: String,
-      required: [true, 'Rule name is required'],
+      required: [true, 'Category is required'],
       trim: true,
     },
-    ruleType: {
-      type: String,
-      enum: Object.values(RuleType),
-      required: [true, 'Rule type is required'],
+    minAmount: {
+      type: Number,
+      min: 0,
     },
-    percentageRequired: {
+    maxAmount: {
+      type: Number,
+      min: 0,
+    },
+    approvers: [{
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    }],
+    requireAllApprovers: {
+      type: Boolean,
+      default: true,
+    },
+    minApprovalPercentage: {
       type: Number,
       min: 0,
       max: 100,
@@ -71,11 +51,7 @@ const ApprovalRuleSchema = new Schema<IApprovalRule>(
       type: Schema.Types.ObjectId,
       ref: 'User',
     },
-    approvalSteps: {
-      type: [ApprovalStepSchema],
-      default: [],
-    },
-    isActive: {
+    isManagerFirst: {
       type: Boolean,
       default: true,
     },
@@ -86,7 +62,7 @@ const ApprovalRuleSchema = new Schema<IApprovalRule>(
 );
 
 // Index for faster queries
-ApprovalRuleSchema.index({ companyId: 1, isActive: 1 });
+ApprovalRuleSchema.index({ companyId: 1, category: 1 });
 
 const ApprovalRule: Model<IApprovalRule> = mongoose.models.ApprovalRule || mongoose.model<IApprovalRule>('ApprovalRule', ApprovalRuleSchema);
 

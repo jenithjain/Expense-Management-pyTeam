@@ -30,11 +30,41 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json()
     const { userId, managerId } = body
 
-    if (!userId || !managerId) {
+    if (!userId) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId and managerId' },
+        { error: 'Missing required field: userId' },
         { status: 400 }
       )
+    }
+
+    // If managerId is null, empty, or "none", remove the manager
+    if (!managerId || managerId === "none") {
+      const updatedUser = await User.findByIdAndUpdate(
+        userId,
+        { $unset: { managerId: "" } },
+        { new: true }
+      )
+        .populate('managerId', 'name email')
+        .select('-password')
+
+      if (!updatedUser) {
+        return NextResponse.json(
+          { error: 'User not found' },
+          { status: 404 }
+        )
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Manager removed successfully',
+        user: {
+          _id: updatedUser._id,
+          name: updatedUser.name,
+          email: updatedUser.email,
+          role: updatedUser.role,
+          managerId: null,
+        },
+      })
     }
 
     // Verify the manager exists and has appropriate role
