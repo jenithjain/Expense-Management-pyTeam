@@ -109,10 +109,6 @@ This project solves these challenges by providing a robust platform to:
 
 ## ⚙️ Getting Started
 
-### Prerequisites
-
-- Node.js (v18.x or later)
-- npm / yarn / pnpm
 
 ### Installation & Setup
 
