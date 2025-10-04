@@ -10,10 +10,10 @@ import {
   Building2,
   ChevronLeft,
   ChevronRight,
-  LogOut,
-  Menu
+  Menu,
+  Sparkles
 } from "lucide-react"
-import { useSession, signOut } from "next-auth/react"
+import { useSession } from "next-auth/react"
 import { cn } from "@/lib/utils"
 
 type NavItem = {
@@ -24,6 +24,7 @@ type NavItem = {
 
 const navItems: NavItem[] = [
   { id: "overview", label: "Overview", icon: <BarChart3 className="w-5 h-5" /> },
+  { id: "assistant", label: "AI Assistant", icon: <Sparkles className="w-5 h-5" /> },
   { id: "users", label: "User Management", icon: <Users className="w-5 h-5" /> },
   { id: "approval-rules", label: "Approval Rules", icon: <Shield className="w-5 h-5" /> },
   { id: "expenses", label: "All Expenses", icon: <FileText className="w-5 h-5" /> },
@@ -45,7 +46,7 @@ export function AdminSidebar({ activeTab, onTabChange }: AdminSidebarProps) {
     <>
       {/* Mobile Menu Button */}
       <button
-        className="fixed top-4 left-4 z-50 lg:hidden p-3 rounded-lg bg-background/80 backdrop-blur-sm border border-border/50 hover:bg-background"
+        className="fixed top-20 left-4 z-50 lg:hidden p-3 rounded-lg bg-background/80 backdrop-blur-sm border border-border/50 hover:bg-background"
         onClick={() => setMobileOpen(!mobileOpen)}
       >
         <Menu className="w-5 h-5" />
@@ -63,6 +64,7 @@ export function AdminSidebar({ activeTab, onTabChange }: AdminSidebarProps) {
       <aside
         className={cn(
           "fixed top-0 left-0 h-screen bg-background/95 backdrop-blur-md border-r border-border/50 z-40 transition-all duration-300",
+          "pt-24 lg:pt-28",
           collapsed ? "w-20" : "w-64",
           mobileOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"
         )}
@@ -114,25 +116,15 @@ export function AdminSidebar({ activeTab, onTabChange }: AdminSidebarProps) {
             ))}
           </nav>
 
-          {/* User Info & Logout */}
+          {/* User Info */}
           <div className="p-4 border-t border-border/50">
             {!collapsed && (
-              <div className="mb-3 px-2">
+              <div className="px-2">
                 <p className="text-xs text-foreground/60">Logged in as</p>
                 <p className="text-sm font-medium truncate">{session?.user?.name}</p>
                 <p className="text-xs text-foreground/60 truncate">{session?.user?.email}</p>
               </div>
             )}
-            <button
-              className={cn(
-                "w-full flex items-center gap-2 px-4 py-2 rounded-lg border border-border/50 bg-background/50 hover:bg-destructive/10 hover:border-destructive transition-colors",
-                collapsed && "px-2 justify-center"
-              )}
-              onClick={() => signOut({ callbackUrl: "/auth/login" })}
-            >
-              <LogOut className="w-4 h-4" />
-              {!collapsed && <span className="text-sm">Logout</span>}
-            </button>
           </div>
         </div>
       </aside>

@@ -7,7 +7,9 @@ import { UserManagement } from "@/components/admin/user-management"
 import { ApprovalRulesManagement } from "@/components/admin/approval-rules-management"
 import { AllExpenses } from "@/components/admin/all-expenses"
 import { CompanySettings } from "@/components/admin/company-settings"
+import { Chatbot } from "@/components/shared/chatbot"
 import { GL } from "@/components/gl"
+import { Sparkles } from "lucide-react"
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState("overview")
@@ -18,9 +20,33 @@ export default function AdminPage() {
       
       <AdminSidebar activeTab={activeTab} onTabChange={setActiveTab} />
       
-      <div className="lg:pl-64 transition-all duration-300">
+      <div className="lg:pl-64 transition-all duration-300 pt-24 lg:pt-28">
         <div className="p-6 md:p-8 relative z-10">
           {activeTab === "overview" && <AdminOverview />}
+          {activeTab === "assistant" && (
+            <div className="space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-orange-500 to-red-500 flex items-center justify-center">
+                  <Sparkles className="w-6 h-6 text-white" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-sentient mb-1">AI Assistant</h2>
+                  <p className="text-sm text-foreground/60">System configuration and management support</p>
+                </div>
+              </div>
+              <Chatbot 
+                variant="embedded"
+                placeholder="Ask about system config, users, or policies..."
+                suggestedQuestions={[
+                  "Who is the manager for a specific user?",
+                  "What's the approval rule for Marketing?",
+                  "Show approval sequence for expenses over ₹50,000",
+                  "Is CFO auto-approval active?",
+                  "How many users are in the system?"
+                ]}
+              />
+            </div>
+          )}
           {activeTab === "users" && (
             <div className="space-y-6">
               <div>

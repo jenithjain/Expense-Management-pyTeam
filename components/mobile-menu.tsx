@@ -5,6 +5,7 @@ import * as Dialog from "@radix-ui/react-dialog"
 import { Menu, X } from "lucide-react"
 import Link from "next/link"
 import { useState } from "react"
+import { useSession, signOut } from "next-auth/react"
 
 interface MobileMenuProps {
   className?: string
@@ -12,16 +13,23 @@ interface MobileMenuProps {
 
 export const MobileMenu = ({ className }: MobileMenuProps) => {
   const [isOpen, setIsOpen] = useState(false)
+  const { data: session } = useSession()
 
   const menuItems = [
     { name: "Home", href: "/" },
     { name: "Employee", href: "/employee" },
+    { name: "AI Assistant", href: "/employee/assistant" },
     { name: "Manager", href: "/manager" },
     { name: "Admin", href: "/admin" },
   ]
 
   const handleLinkClick = () => {
     setIsOpen(false)
+  }
+
+  const handleSignOut = () => {
+    setIsOpen(false)
+    signOut({ callbackUrl: "/" })
   }
 
   return (
@@ -62,13 +70,22 @@ export const MobileMenu = ({ className }: MobileMenuProps) => {
             ))}
 
             <div className="mt-6">
-              <Link
-                href="/auth/login"
-                onClick={handleLinkClick}
-                className="inline-block text-xl font-mono uppercase text-primary transition-colors ease-out duration-150 hover:text-primary/80 py-2"
-              >
-                Sign In
-              </Link>
+              {session ? (
+                <button
+                  onClick={handleSignOut}
+                  className="inline-block text-xl font-mono uppercase text-primary transition-colors ease-out duration-150 hover:text-primary/80 py-2"
+                >
+                  Sign Out
+                </button>
+              ) : (
+                <Link
+                  href="/auth/login"
+                  onClick={handleLinkClick}
+                  className="inline-block text-xl font-mono uppercase text-primary transition-colors ease-out duration-150 hover:text-primary/80 py-2"
+                >
+                  Sign In
+                </Link>
+              )}
             </div>
           </nav>
         </Dialog.Content>

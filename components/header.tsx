@@ -1,8 +1,12 @@
-import Link from "next/link"
+"use client"
 
+import Link from "next/link"
+import { useSession, signOut } from "next-auth/react"
 import { MobileMenu } from "./mobile-menu"
 
 export const Header = () => {
+  const { data: session } = useSession()
+
   return (
     <div className="fixed z-50 pt-8 md:pt-14 top-0 left-0 w-full">
       <header className="flex items-center justify-between container">
@@ -11,6 +15,7 @@ export const Header = () => {
           {[
             { name: "Home", href: "/" },
             { name: "Employee", href: "/employee" },
+            { name: "AI Assistant", href: "/employee/assistant" },
             { name: "Manager", href: "/manager" },
             { name: "Admin", href: "/admin" },
           ].map((item) => (
@@ -23,12 +28,21 @@ export const Header = () => {
             </Link>
           ))}
         </nav>
-        <Link
-          className="uppercase max-lg:hidden transition-colors ease-out duration-150 font-mono text-primary hover:text-primary/80"
-          href="/auth/login"
-        >
-          Sign In
-        </Link>
+        {session ? (
+          <button
+            onClick={() => signOut({ callbackUrl: "/" })}
+            className="uppercase max-lg:hidden transition-colors ease-out duration-150 font-mono text-primary hover:text-primary/80"
+          >
+            Sign Out
+          </button>
+        ) : (
+          <Link
+            className="uppercase max-lg:hidden transition-colors ease-out duration-150 font-mono text-primary hover:text-primary/80"
+            href="/auth/login"
+          >
+            Sign In
+          </Link>
+        )}
         <MobileMenu />
       </header>
     </div>

@@ -124,3 +124,20 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Custom opacity overrides for glass cards and backgrounds */
+.bg-background\/40 {
+  background-color: oklch(from var(--background) l c h / 0.25) !important;
+}
+
+.bg-background\/10 {
+  background-color: oklch(from var(--background) l c h / 0.05) !important;
+}
+
+.border-border\/50 {
+  border-color: oklch(from var(--border) l c h / 0.3) !important;
+}
+
+.border-border\/20 {
+  border-color: oklch(from var(--border) l c h / 0.1) !important;
+}
