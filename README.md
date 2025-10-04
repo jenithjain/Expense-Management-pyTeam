@@ -107,7 +107,6 @@ This project solves these challenges by providing a robust platform to:
 
 ---
 
-## ⚙️ Getting Started
 
 
 ### Installation & Setup
