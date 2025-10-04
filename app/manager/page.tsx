@@ -3,12 +3,16 @@
 import { GL } from "@/components/gl"
 import { GlassCard } from "@/components/shared/glass-card"
 import { ApprovalsTable } from "@/components/manager/approvals-table"
+import { ManagerDashboardStats } from "@/components/manager/dashboard-stats"
 
 export default function ManagerPage() {
   return (
     <main className="relative min-h-svh px-4 md:px-8 py-32">
       <GL hovering={false} />
-      <div className="relative z-10">
+      <div className="relative z-10 grid gap-6">
+        <GlassCard>
+          <ManagerDashboardStats />
+        </GlassCard>
         <GlassCard>
           <div className="mb-4">
             <h1 className="text-xl font-sentient">Approvals to Review</h1>

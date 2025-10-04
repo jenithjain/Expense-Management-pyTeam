@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
@@ -13,10 +14,14 @@ const COUNTRIES = [
   { code: "EU", name: "European Union (EUR)" },
   { code: "IN", name: "India (INR)" },
   { code: "JP", name: "Japan (JPY)" },
+  { code: "CA", name: "Canada (CAD)" },
+  { code: "AU", name: "Australia (AUD)" },
+  { code: "CN", name: "China (CNY)" },
 ]
 
 export function SignupForm() {
   const { toast } = useToast()
+  const router = useRouter()
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -24,26 +29,75 @@ export function SignupForm() {
     confirm: "",
     country: "US",
   })
+  const [loading, setLoading] = useState(false)
 
   function update<K extends keyof typeof form>(key: K, value: string) {
     setForm((f) => ({ ...f, [key]: value }))
   }
 
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    
+    if (form.password !== form.confirm) {
+      toast({ 
+        title: "Passwords do not match",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (form.password.length < 6) {
+      toast({ 
+        title: "Password too short",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email: form.email,
+          password: form.password,
+          name: form.name,
+          countryCode: form.country,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Signup failed")
+      }
+
+      toast({
+        title: "Account created!",
+        description: "You can now log in with your credentials.",
+      })
+
+      // Redirect to login page
+      router.push("/auth/login")
+    } catch (error: any) {
+      toast({
+        title: "Signup failed",
+        description: error.message || "Something went wrong",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
-    <form
-      className="space-y-4"
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (form.password !== form.confirm) {
-          toast({ title: "Passwords do not match" })
-          return
-        }
-        toast({
-          title: "Account created",
-          description: "Demo signup complete. Proceed to login.",
-        })
-      }}
-    >
+    <form className="space-y-4 mt-5" onSubmit={handleSubmit}>
+
       <div className="grid gap-2">
         <Label htmlFor="name">Name</Label>
         <Input
@@ -102,8 +156,8 @@ export function SignupForm() {
           required
         />
       </div>
-      <Button type="submit" className="w-full mt-6">
-        Signup
+      <Button type="submit" className="w-full mt-6" disabled={loading}>
+        {loading ? "Creating account..." : "Signup"}
       </Button>
     </form>
   )
